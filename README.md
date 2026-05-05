@@ -2,7 +2,9 @@
 A cs2 nightvision plugin
 
 # Dependencies
-For saving player data, you must install [Clientprefs](https://github.com/Cruze03/Clientprefs)
+For saving player data between sessions, install [Clientprefs](https://github.com/Cruze03/Clientprefs)
+
+Without `Clientprefs`, Nightvision still works, but player settings stay session-only.
 
 # How to use
 `!nv` to toggle

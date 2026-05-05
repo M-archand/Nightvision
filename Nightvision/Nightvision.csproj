@@ -6,13 +6,16 @@
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="CounterStrikeSharp.API" Version="1.0.303">
+        <PackageReference Include="CounterStrikeSharp.API" Version="*">
             <PrivateAssets>none</PrivateAssets>
             <ExcludeAssets>runtime</ExcludeAssets>
             <IncludeAssets>compile; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
     </ItemGroup>
     <ItemGroup>
-        <ProjectReference Include="..\ClientprefsApi\ClientprefsApi.csproj" />
+        <Reference Include="ClientprefsApi">
+            <HintPath>..\ClientprefsApi.dll</HintPath>
+            <Private>false</Private>
+        </Reference>
     </ItemGroup>
 </Project>

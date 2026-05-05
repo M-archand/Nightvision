@@ -1,148 +1,192 @@
+using System.Globalization;
 using Clientprefs.API;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Capabilities;
+using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.Logging;
 
 namespace Nightvision;
 
-public class Nightvision : BasePlugin
+public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 {
     public override string ModuleName => "Nightvision";
-    public override string ModuleVersion => $"1.0.1";
+    public override string ModuleVersion => $"1.1.0";
     public override string ModuleAuthor => "rc https://github.com/rcnoob/";
     public override string ModuleDescription => "A CS2 nightvision plugin";
+    public NightvisionConfig Config { get; set; } = new();
+
+    private const float MinNightvisionIntensity = 1f;
+    private const float MaxNightvisionIntensity = 10f;
+    private const float DefaultNightvisionIntensity = 5.0f;
+    private const string DefaultChatPrefix = "[NightVision]";
+    private const string DefaultChatPrefixColor = "Lime";
+    private static readonly IReadOnlyDictionary<string, char> ChatColorMap = new Dictionary<string, char>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Blue"] = ChatColors.Blue,
+        ["BlueGrey"] = ChatColors.BlueGrey,
+        ["DarkBlue"] = ChatColors.DarkBlue,
+        ["DarkRed"] = ChatColors.DarkRed,
+        ["Default"] = ChatColors.Default,
+        ["Gold"] = ChatColors.Gold,
+        ["Green"] = ChatColors.Green,
+        ["Grey"] = ChatColors.Grey,
+        ["LightBlue"] = ChatColors.LightBlue,
+        ["LightPurple"] = ChatColors.LightPurple,
+        ["LightRed"] = ChatColors.LightRed,
+        ["LightYellow"] = ChatColors.LightYellow,
+        ["Lime"] = ChatColors.Lime,
+        ["Magenta"] = ChatColors.Magenta,
+        ["Olive"] = ChatColors.Olive,
+        ["Orange"] = ChatColors.Orange,
+        ["Purple"] = ChatColors.Purple,
+        ["Red"] = ChatColors.Red,
+        ["Silver"] = ChatColors.Silver,
+        ["White"] = ChatColors.White,
+        ["Yellow"] = ChatColors.Yellow
+    };
     
     private readonly PluginCapability<IClientprefsApi> g_PluginCapability = new("Clientprefs");
-    private IClientprefsApi ClientprefsApi;
+    private IClientprefsApi? ClientprefsApi;
     private int g_iCookieID = -1, g_iCookieID2 = -1;
-    private Dictionary<int, Dictionary<string, string>> playerCookies = new();
+    private bool ClientprefsAvailabilityResolved;
+    private readonly HashSet<int> loadedPlayerCookies = [];
+    private bool PersistenceAvailable => ClientprefsApi is not null;
+    private bool ClientprefsReady => ClientprefsApi is not null && g_iCookieID != -1 && g_iCookieID2 != -1;
     
-    private static readonly MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState> StateTransition = new(GameData.GetSignature("StateTransition"));
-    private readonly INetworkServerService networkServerService = new();
-    private readonly CSPlayerState[] _oldPlayerState = new CSPlayerState[65];
+    private MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>? StateTransition;
+    private readonly Dictionary<int, CSPlayerState> _oldPlayerState = [];
+
+    public void OnConfigParsed(NightvisionConfig config)
+    {
+        config.ChatPrefix = NormalizeChatPrefix(config.ChatPrefix);
+        config.ChatPrefixColor = NormalizeChatPrefixColor(config.ChatPrefixColor);
+        Config = config;
+    }
+
+    private void LogDebug(string message, params object?[] args)
+    {
+        if (!Config.EnableDebug)
+            return;
+
+        Logger.LogInformation(message, args);
+    }
 
     public override void Load(bool hotReload)
     {
-        Logger.LogInformation("[Nightvision] Loading plugin...");
+        LogDebug("[Nightvision] Loading plugin...");
+
+        TryHookStateTransition();
+
+        RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull, HookMode.Post);
+        RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect, HookMode.Post);
+        RegisterListener<Listeners.CheckTransmit>(OnCheckTransmit);
+        AddCommand("nv", "Enable/disable nightvision", OnNightvisionCommand);
+        AddCommand("nvi", "Change nightvision intensity", OnNightvisionIntensityCommand);
+
+        if (hotReload)
+            SyncConnectedPlayersFromRuntime();
         
-        StateTransition.Hook(Hook_StateTransition, HookMode.Post);
-        
-        RegisterEventHandler<EventPlayerConnectFull>((@event, info) =>
+        LogDebug("[Nightvision] Loaded!");
+    }
+
+    public override void Unload(bool hotReload)
+    {
+        LogDebug("[Nightvision] Unloading plugin...");
+
+        RemoveCommand("nv", OnNightvisionCommand);
+        RemoveCommand("nvi", OnNightvisionIntensityCommand);
+        RemoveListener<Listeners.CheckTransmit>(OnCheckTransmit);
+        DeregisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull, HookMode.Post);
+        DeregisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect, HookMode.Post);
+
+        TryUnhookStateTransition();
+        UnsubscribeClientprefsEvents();
+        Utils.RemoveAllPlayerPP();
+
+        Globals.connectedPlayers.Clear();
+        Globals.playerVars.Clear();
+        loadedPlayerCookies.Clear();
+        _oldPlayerState.Clear();
+
+        ClientprefsApi = null;
+        ClientprefsAvailabilityResolved = false;
+        g_iCookieID = -1;
+        g_iCookieID2 = -1;
+
+        LogDebug("[Nightvision] Unloaded{Suffix}.", hotReload ? " for hot reload" : string.Empty);
+    }
+
+    // Print to logs if the signature is stale
+    private void TryHookStateTransition()
+    {
+        try
         {
-            if (@event.Userid!.IsValid)
+            string signature = GameData.GetSignature("StateTransition");
+            if (string.IsNullOrWhiteSpace(signature))
             {
-                var player = @event.Userid;
-
-                if (player.IsValid && !player.IsBot)
-                    Utils.OnPlayerConnect(player);
-            }
-            return HookResult.Continue;
-        });
-        
-        RegisterEventHandler<EventPlayerDisconnect>((@event, info) =>
-        {
-            if (@event.Userid!.IsValid)
-            {
-                var player = @event.Userid;
-
-                if (player.IsValid && !player.IsBot)
-                    Utils.OnPlayerDisconnect(player);
-            }
-            return HookResult.Continue;
-        });
-        
-        RegisterListener<Listeners.CheckTransmit>((CCheckTransmitInfoList infoList) =>
-        {
-            IEnumerable<CCSPlayerController> players = Utilities.FindAllEntitiesByDesignerName<CCSPlayerController>("cs_player_controller");
-
-            if (!players.Any())
-                return;
-
-            foreach ((CCheckTransmitInfo info, CCSPlayerController? player) in infoList)
-            {
-                if (player == null || player.IsBot || !player.IsValid || player.IsHLTV)
-                    continue;
-
-                if (!Globals.connectedPlayers.TryGetValue(player.Slot, out var connected))
-                    continue;
-                
-                foreach (var (owner, pp) in Globals.postProcessVolumes.Where(x => x.Key != player))
-                    info.TransmitEntities.Remove(pp);
-            }
-        });
-        
-        AddCommand("nv", "Enable/disable nightvision", (player, info) =>
-        {
-            if (player == null || player.IsBot || player.Team == CsTeam.Spectator) return;
-            Globals.playerVars[player.Slot].NightvisionEnabled = !Globals.playerVars[player.Slot].NightvisionEnabled;
-
-            if (Globals.playerVars[player.Slot].NightvisionEnabled)
-            {
-                Utils.CreatePlayerPP(player);
-                ClientprefsApi.SetPlayerCookie(player, g_iCookieID, "true");
-            }
-            else
-            {
-                Utils.RemovePlayerPP(player);
-                ClientprefsApi.SetPlayerCookie(player, g_iCookieID, "false");
-            }
-            
-            player.PrintToChat($"[Nightvision] {(Globals.playerVars[player.Slot].NightvisionEnabled ? "Enabled" : "Disabled")}");
-        });
-        
-        AddCommand("nvi", "Change nightvision intensity", (player, info) =>
-        {
-            if (player == null || player.IsBot) return;
-
-            if (!Globals.playerVars[player.Slot].NightvisionEnabled) return;
-
-            string arg = info.ArgByIndex(1);
-            if (arg is null || arg == "")
-            {
-                player.PrintToChat("[Nightvision] Please provide a float value (!nvi 1.3)");
+                Logger.LogError("[Nightvision] StateTransition signature is stale and needs to be updated.");
                 return;
             }
-            
-            float nvIntensity = float.Parse(arg);
-            if (nvIntensity < 0)
-            {
-                player.PrintToChat("[Nightvision] Please provide a positive float value (!nvi 1.3)");
-                return;
-            }
-            
-            ClientprefsApi.SetPlayerCookie(player, g_iCookieID2, nvIntensity.ToString());
-            playerCookies[player.Slot]["nightvision_intensity"] = nvIntensity.ToString();
-            Globals.playerVars[player.Slot].NightvisionIntensity = nvIntensity;
-            
-            Utils.RemovePlayerPP(player);
-            Utils.CreatePlayerPP(player);
-            
-            player.PrintToChat($"[Nightvision] Intensity set to {Globals.playerVars[player.Slot].NightvisionIntensity}");
-        });
-        
-        Logger.LogInformation("[Nightvision] Loaded!");
+
+            StateTransition = new MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>(signature);
+            StateTransition.Hook(Hook_StateTransition, HookMode.Post);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[Nightvision] StateTransition signature is stale and needs to be updated.");
+            StateTransition = null;
+        }
+    }
+
+    private void TryUnhookStateTransition()
+    {
+        if (StateTransition == null)
+            return;
+
+        try
+        {
+            StateTransition.Unhook(Hook_StateTransition, HookMode.Post);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "[Nightvision] Failed to unhook StateTransition during unload.");
+        }
+        finally
+        {
+            StateTransition = null;
+        }
     }
 
     public override void OnAllPluginsLoaded(bool hotReload)
     {
         ClientprefsApi = g_PluginCapability.Get();
+        ClientprefsAvailabilityResolved = true;
 
-        if (ClientprefsApi == null) return;
+        if (ClientprefsApi == null)
+        {
+            Logger.LogWarning("[Nightvision] Clientprefs not available. Nightvision settings will be session-only.");
+            return;
+        }
+
+        LogDebug("[Nightvision] Clientprefs detected. Nightvision settings will persist between sessions.");
         
         ClientprefsApi.OnDatabaseLoaded += OnClientprefDatabaseReady;
         ClientprefsApi.OnPlayerCookiesCached += OnPlayerCookiesCached;
 
-        if (hotReload && ClientprefsApi != null)
-        {
+        if (hotReload)
             OnClientprefDatabaseReady();
-            foreach (CCSPlayerController player in Utilities.GetPlayers().Where(p => !p.IsBot))
-            {
-                OnPlayerCookiesCached(player);
-            }
-        }
+    }
+
+    private void UnsubscribeClientprefsEvents()
+    {
+        if (ClientprefsApi == null)
+            return;
+
+        ClientprefsApi.OnDatabaseLoaded -= OnClientprefDatabaseReady;
+        ClientprefsApi.OnPlayerCookiesCached -= OnPlayerCookiesCached;
     }
     
     public void OnClientprefDatabaseReady()
@@ -163,34 +207,253 @@ public class Nightvision : BasePlugin
             Logger.LogError("[Nightvision] Failed to register player cookie nightvision_intensity!");
             return;
         }
+
+        LogDebug("[Nightvision] Clientprefs ready. Player settings will now persist.");
+        SyncConnectedPlayersFromPersistence();
     }
     
     public void OnPlayerCookiesCached(CCSPlayerController player)
     {
-        if (ClientprefsApi is null) return;
+        if (!ClientprefsReady) return;
+        if (loadedPlayerCookies.Contains(player.Slot)) return;
 
-        playerCookies[player.Slot] = new Dictionary<string, string>();
-
-        playerCookies[player.Slot]["nightvision_enabled"] = ClientprefsApi.GetPlayerCookie(player, g_iCookieID);
-        playerCookies[player.Slot]["nightvision_intensity"] = ClientprefsApi.GetPlayerCookie(player, g_iCookieID2);
+        var playerVars = EnsurePlayerState(player);
         
-        if (playerCookies[player.Slot]["nightvision_enabled"].Equals("true"))
-        {
-            Globals.playerVars[player.Slot].NightvisionEnabled = true;
+        string enabledCookie = ClientprefsApi!.GetPlayerCookie(player, g_iCookieID);
+        string intensityCookie = ClientprefsApi.GetPlayerCookie(player, g_iCookieID2);
+        loadedPlayerCookies.Add(player.Slot);
 
-            if (playerCookies[player.Slot]["nightvision_intensity"] != null &&
-                playerCookies[player.Slot]["nightvision_intensity"] != "")
+        if (TryNormalizeNightvisionIntensity(intensityCookie, out float nvIntensity))
+        {
+            playerVars.NightvisionIntensity = nvIntensity;
+        }
+        else
+        {
+            playerVars.NightvisionIntensity = DefaultNightvisionIntensity;
+        }
+
+        playerVars.NightvisionEnabled = string.Equals(enabledCookie, "true", StringComparison.OrdinalIgnoreCase);
+
+        if (playerVars.NightvisionEnabled)
+            Utils.CreatePlayerPP(player);
+        else
+            Utils.RemovePlayerPP(player);
+    }
+
+    private PlayerVars EnsurePlayerState(CCSPlayerController player)
+    {
+        if (!Globals.playerVars.TryGetValue(player.Slot, out var playerVars))
+        {
+            playerVars = new PlayerVars();
+            Globals.playerVars[player.Slot] = playerVars;
+        }
+
+        Globals.connectedPlayers[player.Slot] = new CCSPlayerController(player.Handle);
+        return playerVars;
+    }
+
+    private static string NormalizeChatPrefix(string? chatPrefix)
+    {
+        if (string.IsNullOrWhiteSpace(chatPrefix))
+            return DefaultChatPrefix;
+
+        return chatPrefix.Trim();
+    }
+
+    private static string NormalizeChatPrefixColor(string? chatPrefixColor)
+    {
+        if (string.IsNullOrWhiteSpace(chatPrefixColor))
+            return DefaultChatPrefixColor;
+
+        string normalizedColor = chatPrefixColor.Trim();
+        return ChatColorMap.ContainsKey(normalizedColor) ? normalizedColor : DefaultChatPrefixColor;
+    }
+
+    private void PrintPluginChat(CCSPlayerController player, string message)
+    {
+        player.PrintToChat($"{ ChatColorMap[Config.ChatPrefixColor]}{Config.ChatPrefix}{ChatColors.Default} {message}");
+    }
+
+    private bool TryGetReadyPlayerVars(CCSPlayerController player, out PlayerVars playerVars)
+    {
+        playerVars = EnsurePlayerState(player);
+
+        if (!ClientprefsAvailabilityResolved)
+        {
+            PrintPluginChat(player, "Settings are still loading. Try again in a moment.");
+            return false;
+        }
+
+        if (!PersistenceAvailable)
+            return true;
+
+        if (!ClientprefsReady)
+        {
+            PrintPluginChat(player, "Persistent settings are still loading. Try again in a moment.");
+            return false;
+        }
+
+        if (loadedPlayerCookies.Contains(player.Slot))
+            return true;
+
+        if (TryLoadPlayerCookies(player))
+            return true;
+
+        PrintPluginChat(player, "Persistent settings are still loading. Try again in a moment.");
+        return false;
+    }
+
+    private bool TryLoadPlayerCookies(CCSPlayerController player)
+    {
+        if (!ClientprefsReady || loadedPlayerCookies.Contains(player.Slot))
+            return false;
+
+        if (!ClientprefsApi!.ArePlayerCookiesCached(player))
+            return false;
+
+        OnPlayerCookiesCached(player);
+        return loadedPlayerCookies.Contains(player.Slot);
+    }
+
+    private void SyncConnectedPlayersFromRuntime()
+    {
+        foreach (CCSPlayerController player in Utilities.GetPlayers().Where(p => p.IsValid && !p.IsBot))
+            EnsurePlayerState(player);
+    }
+
+    private void SyncConnectedPlayersFromPersistence()
+    {
+        if (!ClientprefsReady) return;
+
+        foreach (CCSPlayerController player in Utilities.GetPlayers().Where(p => p.IsValid && !p.IsBot))
+        {
+            EnsurePlayerState(player);
+            TryLoadPlayerCookies(player);
+        }
+    }
+
+    private static bool TryNormalizeNightvisionIntensity(string? value, out float normalizedIntensity)
+    {
+        normalizedIntensity = DefaultNightvisionIntensity;
+
+        if (!float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float parsedIntensity))
+            return false;
+
+        if (parsedIntensity < MinNightvisionIntensity || parsedIntensity > MaxNightvisionIntensity)
+            return false;
+
+        normalizedIntensity = parsedIntensity;
+        return true;
+    }
+
+    private void PersistPlayerSettings(CCSPlayerController player, PlayerVars playerVars)
+    {
+        if (!ClientprefsReady) return;
+
+        ClientprefsApi!.SetPlayerCookie(player, g_iCookieID, playerVars.NightvisionEnabled ? "true" : "false");
+        ClientprefsApi.SetPlayerCookie(player, g_iCookieID2, playerVars.NightvisionIntensity.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private HookResult OnPlayerConnectFull(EventPlayerConnectFull @event, GameEventInfo info)
+    {
+        if (@event.Userid?.IsValid != true)
+            return HookResult.Continue;
+
+        var player = @event.Userid;
+        if (player.IsValid && !player.IsBot)
+        {
+            _oldPlayerState.Remove(player.Slot);
+            Utils.OnPlayerConnect(player);
+            TryLoadPlayerCookies(player);
+        }
+
+        return HookResult.Continue;
+    }
+
+    private HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo info)
+    {
+        if (@event.Userid?.IsValid != true)
+            return HookResult.Continue;
+
+        var player = @event.Userid;
+        if (player.IsValid && !player.IsBot)
+        {
+            Utils.OnPlayerDisconnect(player);
+            loadedPlayerCookies.Remove(player.Slot);
+            _oldPlayerState.Remove(player.Slot);
+        }
+
+        return HookResult.Continue;
+    }
+
+    private void OnCheckTransmit(CCheckTransmitInfoList infoList)
+    {
+        if (Globals.postProcessVolumes.Count == 0)
+            return;
+
+        foreach ((CCheckTransmitInfo info, CCSPlayerController? player) in infoList)
+        {
+            if (player == null || player.IsBot || !player.IsValid || player.IsHLTV)
+                continue;
+
+            if (!Globals.connectedPlayers.ContainsKey(player.Slot))
+                continue;
+
+            foreach (var (ownerSlot, pp) in Globals.postProcessVolumes)
             {
-                float nvIntensity = float.Parse(playerCookies[player.Slot]["nightvision_intensity"]);
-                Globals.playerVars[player.Slot].NightvisionIntensity = nvIntensity;
-                Utils.CreatePlayerPP(player);
-            }
-            else
-            {
-                Utils.CreatePlayerPP(player);
+                if (ownerSlot == player.Slot)
+                    continue;
+
+                info.TransmitEntities.Remove(pp);
             }
         }
     }
+
+    private void OnNightvisionCommand(CCSPlayerController? player, CommandInfo info)
+    {
+        if (player == null || player.IsBot || player.Team == CsTeam.Spectator) return;
+        if (!TryGetReadyPlayerVars(player, out var playerVars)) return;
+
+        playerVars.NightvisionEnabled = !playerVars.NightvisionEnabled;
+
+        if (playerVars.NightvisionEnabled)
+            Utils.CreatePlayerPP(player);
+        else
+            Utils.RemovePlayerPP(player);
+
+        PersistPlayerSettings(player, playerVars);
+        PrintPluginChat(player, playerVars.NightvisionEnabled ? $"{ChatColors.Lime}Enabled" : $"{ChatColors.LightRed}Disabled");
+    }
+
+    private void OnNightvisionIntensityCommand(CCSPlayerController? player, CommandInfo info)
+    {
+        if (player == null || player.IsBot) return;
+        if (!TryGetReadyPlayerVars(player, out var playerVars)) return;
+        if (!playerVars.NightvisionEnabled) return;
+
+        string arg = info.ArgByIndex(1);
+        if (arg is null || arg == "")
+        {
+            PrintPluginChat(player, "Please provide a float value (E.g. !nvi 1.3)");
+            return;
+        }
+
+        bool validIntensity = TryNormalizeNightvisionIntensity(arg, out float nvIntensity);
+        if (!validIntensity)
+        {
+            nvIntensity = DefaultNightvisionIntensity;
+            PrintPluginChat(player, $"Inputs are limited to between {MinNightvisionIntensity.ToString(CultureInfo.InvariantCulture)} and {MaxNightvisionIntensity.ToString(CultureInfo.InvariantCulture)}. Using {DefaultNightvisionIntensity.ToString(CultureInfo.InvariantCulture)}.");
+        }
+
+        playerVars.NightvisionIntensity = nvIntensity;
+        PersistPlayerSettings(player, playerVars);
+
+        Utils.RemovePlayerPP(player);
+        Utils.CreatePlayerPP(player);
+
+        PrintPluginChat(player, $"Intensity set to {ChatColors.Lime}{playerVars.NightvisionIntensity}");
+    }
+
     private HookResult Hook_StateTransition(DynamicHook h)
     {
         var player = h.GetParam<CCSPlayerPawn>(0).OriginalController.Value;
@@ -198,25 +461,26 @@ public class Nightvision : BasePlugin
 
         if (player is null) return HookResult.Continue;
 
-        if (state != _oldPlayerState[player.Index])
+        _oldPlayerState.TryGetValue(player.Slot, out var oldState);
+
+        if (state != oldState)
         {
-            if (state == CSPlayerState.STATE_OBSERVER_MODE || _oldPlayerState[player.Index] == CSPlayerState.STATE_OBSERVER_MODE)
+            bool enteringSpectator = state == CSPlayerState.STATE_OBSERVER_MODE;
+            bool leavingSpectator = oldState == CSPlayerState.STATE_OBSERVER_MODE;
+
+            if (enteringSpectator)
             {
-                ForceFullUpdate(player);
+                Utils.RemovePlayerPP(player);
+            }
+            else if (leavingSpectator)
+            {
+                if (Globals.playerVars.TryGetValue(player.Slot, out var playerVars) && playerVars.NightvisionEnabled)
+                    Utils.CreatePlayerPP(player);
             }
         }
 
-        _oldPlayerState[player.Index] = state;
+        _oldPlayerState[player.Slot] = state;
 
         return HookResult.Continue;
-    }
-    private void ForceFullUpdate(CCSPlayerController? player)
-    {
-        if (player is null || !player.IsValid) return;
-
-        var networkGameServer = networkServerService.GetIGameServer();
-        networkGameServer.GetClientBySlot(player.Slot)?.ForceFullUpdate();
-
-        player.PlayerPawn.Value?.Teleport(null, player.PlayerPawn.Value.EyeAngles, null);
     }
 }

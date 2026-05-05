@@ -1,8 +1,5 @@
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
-using CounterStrikeSharp.API.Modules.Memory;
-using CounterStrikeSharp.API.Modules.Utils;
-using Serilog.Core;
 
 namespace Nightvision;
 
@@ -30,26 +27,55 @@ public class Utils
 
     public static void CreatePlayerPP(CCSPlayerController? player)
     {
-        var pp = Utilities.CreateEntityByName<CPostProcessingVolume>("post_processing_volume")!;
+        if (player == null || player.IsBot)
+            return;
+
+        int playerSlot = player.Slot;
+
+        if (!Globals.playerVars.TryGetValue(playerSlot, out var playerVars))
+            return;
+
+        RemovePlayerPP(player);
+
+        var pp = Utilities.CreateEntityByName<CPostProcessingVolume>("post_processing_volume");
+        if (pp == null)
+            return;
+
         pp.Master = true;
 
         pp.FadeDuration = 0f;
         pp.ExposureControl = true;
-        pp.MaxExposure = Globals.playerVars[player.Slot].NightvisionIntensity;
-        pp.MinExposure = Globals.playerVars[player.Slot].NightvisionIntensity;
+        pp.MaxExposure = playerVars.NightvisionIntensity;
+        pp.MinExposure = playerVars.NightvisionIntensity;
         
         pp.DispatchSpawn();
         
-        Globals.postProcessVolumes.Add(player, pp);
+        Globals.postProcessVolumes[playerSlot] = pp;
     }
 
     public static void RemovePlayerPP(CCSPlayerController? player)
     {
-        if (Globals.postProcessVolumes.TryGetValue(player, out var pp))
+        if (player == null)
+            return;
+
+        int playerSlot = player.Slot;
+
+        if (Globals.postProcessVolumes.TryGetValue(playerSlot, out var pp))
         {
             pp.AcceptInput("Kill");
             pp.Remove();
-            Globals.postProcessVolumes.Remove(player);
+            Globals.postProcessVolumes.Remove(playerSlot);
         }
+    }
+
+    public static void RemoveAllPlayerPP()
+    {
+        foreach (var pp in Globals.postProcessVolumes.Values)
+        {
+            pp.AcceptInput("Kill");
+            pp.Remove();
+        }
+
+        Globals.postProcessVolumes.Clear();
     }
 }
