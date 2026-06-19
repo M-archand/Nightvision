@@ -186,6 +186,18 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     public async void OnClientprefDatabaseReady()
     {
+        try
+        {
+            await RegisterClientprefCookiesAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[Nightvision] Unhandled error while preparing player cookies.");
+        }
+    }
+
+    private async Task RegisterClientprefCookiesAsync()
+    {
         if (ClientprefsApi is null) return;
 
         int enabledCookieId;
