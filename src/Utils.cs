@@ -5,15 +5,6 @@ namespace Nightvision;
 
 public class Utils
 {
-    public static void OnPlayerConnect(CCSPlayerController? player)
-    {
-        if (player == null || player.IsBot)
-            return;
-
-        Globals.playerVars[player.Slot] = new PlayerVars();
-        Globals.connectedPlayers[player.Slot] = new CCSPlayerController(player.Handle);
-    }
-
     public static void OnPlayerDisconnect(CCSPlayerController? player)
     {
         if (player == null || player.IsBot)

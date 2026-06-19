@@ -361,7 +361,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (player.IsValid && !player.IsBot)
         {
             _oldPlayerState.Remove(player.Slot);
-            Utils.OnPlayerConnect(player);
             EnsurePlayerState(player);
         }
 
