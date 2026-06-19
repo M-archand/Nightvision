@@ -4,7 +4,7 @@ namespace Nightvision;
 
 public class Globals
 {
-    public static Dictionary<int, CCSPlayerController> connectedPlayers = [];
+    public static HashSet<int> connectedSlots = [];
     public static Dictionary<int, CPostProcessingVolume> postProcessVolumes = new();
     public static Dictionary<int, PlayerVars> playerVars = [];
 }

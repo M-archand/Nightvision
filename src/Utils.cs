@@ -12,7 +12,7 @@ public class Utils
 
         RemovePlayerPP(player);
         Globals.playerVars.Remove(player.Slot);
-        Globals.connectedPlayers.Remove(player.Slot);
+        Globals.connectedSlots.Remove(player.Slot);
     }
 
     public static void CreatePlayerPP(CCSPlayerController? player)

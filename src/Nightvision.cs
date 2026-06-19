@@ -104,7 +104,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         UnsubscribeClientprefsEvents();
         Utils.RemoveAllPlayerPP();
 
-        Globals.connectedPlayers.Clear();
+        Globals.connectedSlots.Clear();
         Globals.playerVars.Clear();
         loadedPlayerCookies.Clear();
         _oldPlayerState.Clear();
@@ -259,7 +259,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             Globals.playerVars[player.Slot] = playerVars;
         }
 
-        Globals.connectedPlayers[player.Slot] = new CCSPlayerController(player.Handle);
+        Globals.connectedSlots.Add(player.Slot);
         return playerVars;
     }
 
@@ -430,7 +430,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             if (player == null || player.IsBot || !player.IsValid || player.IsHLTV)
                 continue;
 
-            if (!Globals.connectedPlayers.ContainsKey(player.Slot))
+            if (!Globals.connectedSlots.Contains(player.Slot))
                 continue;
 
             foreach (var (ownerSlot, pp) in Globals.postProcessVolumes)
