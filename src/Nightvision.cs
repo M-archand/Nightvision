@@ -207,8 +207,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         int intensityCookieId;
         try
         {
-            enabledCookieId = await ClientprefsApi.RegPlayerCookieAsync("nightvision_enabled", "Nightvision status");
-            intensityCookieId = await ClientprefsApi.RegPlayerCookieAsync("nightvision_intensity", "Nightvision intensity");
+            enabledCookieId = await ClientprefsApi.RegPlayerCookieAsync("nightvision_enabled", "Nightvision status", CookieAccess.CookieAccess_Private);
+            intensityCookieId = await ClientprefsApi.RegPlayerCookieAsync("nightvision_intensity", "Nightvision intensity", CookieAccess.CookieAccess_Private);
         }
         catch (Exception ex)
         {
