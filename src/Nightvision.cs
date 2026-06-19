@@ -59,8 +59,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     private MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>? StateTransition;
     private readonly PluginState _state = new();
     private readonly Dictionary<int, CSPlayerState> _oldPlayerState = [];
-    private readonly List<(CCheckTransmitInfo info, int slot)> _transmitObservers = [];
-    private readonly List<int> _staleSlots = [];
 
     public void OnConfigParsed(NightvisionConfig config)
     {
@@ -437,7 +435,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (_state.postProcessVolumes.Count == 0)
             return;
 
-        _transmitObservers.Clear();
+        var transmitObservers = new List<(CCheckTransmitInfo info, int slot)>();
         foreach ((CCheckTransmitInfo info, CCSPlayerController? player) in infoList)
         {
             if (player == null || player.IsBot || !player.IsValid || player.IsHLTV)
@@ -446,22 +444,22 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             if (!_state.connectedSlots.Contains(player.Slot))
                 continue;
 
-            _transmitObservers.Add((info, player.Slot));
+            transmitObservers.Add((info, player.Slot));
         }
 
-        if (_transmitObservers.Count == 0)
+        if (transmitObservers.Count == 0)
             return;
 
-        _staleSlots.Clear();
+        var staleSlots = new List<int>();
         foreach (var (ownerSlot, pp) in _state.postProcessVolumes)
         {
             if (pp == null || !pp.IsValid)
             {
-                _staleSlots.Add(ownerSlot);
+                staleSlots.Add(ownerSlot);
                 continue;
             }
 
-            foreach (var (info, slot) in _transmitObservers)
+            foreach (var (info, slot) in transmitObservers)
             {
                 if (slot == ownerSlot)
                     continue;
@@ -470,7 +468,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             }
         }
 
-        foreach (int slot in _staleSlots)
+        foreach (int slot in staleSlots)
             _state.postProcessVolumes.Remove(slot);
     }
 
