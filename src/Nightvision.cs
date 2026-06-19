@@ -341,7 +341,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         {
             EnsurePlayerState(player);
 
-            if (!ClientprefsApi!.ArePlayerCookiesCached(player))
+            if (ClientprefsApi!.ArePlayerCookiesCached(player))
                 OnPlayerCookiesCached(player);
         }
     }
