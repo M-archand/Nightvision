@@ -410,13 +410,16 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         {
             foreach (CCSPlayerController player in Utilities.GetPlayers().Where(p => p.IsValid && !p.IsBot))
             {
-                if (!Globals.playerVars.TryGetValue(player.Slot, out var playerVars))
-                    continue;
-
-                if (playerVars.NightvisionEnabled && player.PawnIsAlive)
+                if (Globals.playerVars.TryGetValue(player.Slot, out var playerVars))
                 {
-                    Utils.CreatePlayerPP(player);
+                    if (playerVars.NightvisionEnabled && player.PawnIsAlive)
+                        Utils.CreatePlayerPP(player);
+
+                    continue;
                 }
+
+                if (ClientprefsReady && ClientprefsApi!.ArePlayerCookiesCached(player))
+                    OnPlayerCookiesCached(player);
             }
         });
     }
