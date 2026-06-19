@@ -74,7 +74,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (!Config.EnableDebug)
             return;
 
-        Logger.LogInformation(message, args);
+        Logger.LogDebug(message, args);
     }
 
     public override void Load(bool hotReload)
