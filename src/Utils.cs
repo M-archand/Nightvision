@@ -11,7 +11,6 @@ public class Utils
             return;
 
         RemovePlayerPP(player);
-        Globals.playerVars[player.Slot] = new PlayerVars();
         Globals.playerVars.Remove(player.Slot);
         Globals.connectedPlayers.Remove(player.Slot);
     }
