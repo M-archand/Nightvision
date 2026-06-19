@@ -6,7 +6,7 @@ namespace Nightvision;
 public class NightvisionConfig : BasePluginConfig
 {
     [JsonPropertyName("EnableDebug")]
-    public bool EnableDebug { get; set; } = true;
+    public bool EnableDebug { get; set; } = false;
 
     [JsonPropertyName("ChatPrefix")]
     public string ChatPrefix { get; set; } = "[NightVision]";
