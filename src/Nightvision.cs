@@ -58,6 +58,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     private MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>? StateTransition;
     private readonly Dictionary<int, CSPlayerState> _oldPlayerState = [];
+    private readonly List<(CCheckTransmitInfo info, int slot)> _transmitObservers = [];
 
     public void OnConfigParsed(NightvisionConfig config)
     {
@@ -438,6 +439,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
                 return;
         }
 
+        _transmitObservers.Clear();
         foreach ((CCheckTransmitInfo info, CCSPlayerController? player) in infoList)
         {
             if (player == null || player.IsBot || !player.IsValid || player.IsHLTV)
@@ -446,9 +448,17 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             if (!Globals.connectedSlots.Contains(player.Slot))
                 continue;
 
-            foreach (var (ownerSlot, pp) in Globals.postProcessVolumes)
+            _transmitObservers.Add((info, player.Slot));
+        }
+
+        if (_transmitObservers.Count == 0)
+            return;
+
+        foreach (var (ownerSlot, pp) in Globals.postProcessVolumes)
+        {
+            foreach (var (info, slot) in _transmitObservers)
             {
-                if (ownerSlot == player.Slot)
+                if (slot == ownerSlot)
                     continue;
 
                 info.TransmitEntities.Remove(pp);
