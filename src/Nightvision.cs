@@ -59,6 +59,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     private MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>? StateTransition;
     private readonly Dictionary<int, CSPlayerState> _oldPlayerState = [];
     private readonly List<(CCheckTransmitInfo info, int slot)> _transmitObservers = [];
+    private readonly List<int> _staleSlots = [];
 
     public void OnConfigParsed(NightvisionConfig config)
     {
@@ -425,15 +426,15 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (Globals.postProcessVolumes.Count == 0)
             return;
 
-        List<int>? staleSlots = null;
+        _staleSlots.Clear();
         foreach (var (ownerSlot, pp) in Globals.postProcessVolumes)
         {
             if (pp == null || !pp.IsValid)
-                (staleSlots ??= []).Add(ownerSlot);
+                _staleSlots.Add(ownerSlot);
         }
-        if (staleSlots is not null)
+        if (_staleSlots.Count > 0)
         {
-            foreach (int slot in staleSlots)
+            foreach (int slot in _staleSlots)
                 Globals.postProcessVolumes.Remove(slot);
             if (Globals.postProcessVolumes.Count == 0)
                 return;
