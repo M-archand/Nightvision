@@ -474,7 +474,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     private void OnNightvisionCommand(CCSPlayerController? player, CommandInfo info)
     {
         if (player == null || player.IsBot) return;
-        if (player.Team == CsTeam.Spectator)
+        if (player.Team == CsTeam.Spectator || player.Team == CsTeam.None)
         {
             PrintPluginChat(player, $"{ChatColors.LightRed}Nightvision can't be used while spectating.");
             return;
@@ -495,7 +495,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     private void OnNightvisionIntensityCommand(CCSPlayerController? player, CommandInfo info)
     {
         if (player == null || player.IsBot) return;
-        if (player.Team == CsTeam.Spectator)
+        if (player.Team == CsTeam.Spectator || player.Team == CsTeam.None)
         {
             PrintPluginChat(player, $"{ChatColors.LightRed}Nightvision can't be used while spectating.");
             return;
