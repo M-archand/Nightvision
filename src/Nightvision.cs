@@ -218,23 +218,30 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
         Server.NextWorldUpdate(() =>
         {
-            g_iCookieID = enabledCookieId;
-            g_iCookieID2 = intensityCookieId;
-
-            if (g_iCookieID == -1)
+            try
             {
-                Logger.LogError("[Nightvision] Failed to register player cookie nightvision_enabled!");
-                return;
-            }
+                g_iCookieID = enabledCookieId;
+                g_iCookieID2 = intensityCookieId;
 
-            if (g_iCookieID2 == -1)
+                if (g_iCookieID == -1)
+                {
+                    Logger.LogError("[Nightvision] Failed to register player cookie nightvision_enabled!");
+                    return;
+                }
+
+                if (g_iCookieID2 == -1)
+                {
+                    Logger.LogError("[Nightvision] Failed to register player cookie nightvision_intensity!");
+                    return;
+                }
+
+                LogDebug("[Nightvision] Clientprefs ready. Player settings will now persist.");
+                SyncConnectedPlayersFromPersistence();
+            }
+            catch (Exception ex)
             {
-                Logger.LogError("[Nightvision] Failed to register player cookie nightvision_intensity!");
-                return;
+                Logger.LogError(ex, "[Nightvision] Failed to apply player cookies on world update.");
             }
-
-            LogDebug("[Nightvision] Clientprefs ready. Player settings will now persist.");
-            SyncConnectedPlayersFromPersistence();
         });
     }
 
