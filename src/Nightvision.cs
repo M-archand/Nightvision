@@ -489,7 +489,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     private void OnNightvisionIntensityCommand(CCSPlayerController? player, CommandInfo info)
     {
-        if (player == null || player.IsBot) return;
+        if (player == null || player.IsBot || player.Team == CsTeam.Spectator) return;
         if (!TryGetReadyPlayerVars(player, out var playerVars)) return;
         if (!playerVars.NightvisionEnabled) return;
 
