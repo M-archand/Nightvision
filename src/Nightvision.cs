@@ -57,6 +57,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     private bool ClientprefsReady => ClientprefsApi is not null && g_iCookieID != -1 && g_iCookieID2 != -1;
 
     private MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>? StateTransition;
+    private readonly PluginState _state = new();
     private readonly Dictionary<int, CSPlayerState> _oldPlayerState = [];
     private readonly List<(CCheckTransmitInfo info, int slot)> _transmitObservers = [];
     private readonly List<int> _staleSlots = [];
@@ -104,10 +105,10 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
         TryUnhookStateTransition();
         UnsubscribeClientprefsEvents();
-        Utils.RemoveAllPlayerPP();
+        Utils.RemoveAllPlayerPP(_state);
 
-        Globals.connectedSlots.Clear();
-        Globals.playerVars.Clear();
+        _state.connectedSlots.Clear();
+        _state.playerVars.Clear();
         loadedPlayerCookies.Clear();
         _oldPlayerState.Clear();
 
@@ -261,20 +262,20 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         playerVars.NightvisionEnabled = string.Equals(enabledCookie, "true", StringComparison.OrdinalIgnoreCase);
 
         if (playerVars.NightvisionEnabled && player.PawnIsAlive)
-            Utils.CreatePlayerPP(player);
+            Utils.CreatePlayerPP(_state, player);
         else
-            Utils.RemovePlayerPP(player);
+            Utils.RemovePlayerPP(_state, player);
     }
 
     private PlayerVars EnsurePlayerState(CCSPlayerController player)
     {
-        if (!Globals.playerVars.TryGetValue(player.Slot, out var playerVars))
+        if (!_state.playerVars.TryGetValue(player.Slot, out var playerVars))
         {
             playerVars = new PlayerVars();
-            Globals.playerVars[player.Slot] = playerVars;
+            _state.playerVars[player.Slot] = playerVars;
         }
 
-        Globals.connectedSlots.Add(player.Slot);
+        _state.connectedSlots.Add(player.Slot);
         return playerVars;
     }
 
@@ -390,7 +391,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         var player = @event.Userid;
         if (player.IsValid && !player.IsBot)
         {
-            Utils.OnPlayerDisconnect(player);
+            Utils.OnPlayerDisconnect(_state, player);
             loadedPlayerCookies.Remove(player.Slot);
             _oldPlayerState.Remove(player.Slot);
         }
@@ -400,7 +401,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     private void OnMapEnd()
     {
-        Utils.RemoveAllPlayerPP();
+        Utils.RemoveAllPlayerPP(_state);
         _oldPlayerState.Clear();
     }
 
@@ -410,10 +411,10 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         {
             foreach (CCSPlayerController player in Utilities.GetPlayers().Where(p => p.IsValid && !p.IsBot))
             {
-                if (Globals.playerVars.TryGetValue(player.Slot, out var playerVars))
+                if (_state.playerVars.TryGetValue(player.Slot, out var playerVars))
                 {
                     if (playerVars.NightvisionEnabled && player.PawnIsAlive)
-                        Utils.CreatePlayerPP(player);
+                        Utils.CreatePlayerPP(_state, player);
 
                     continue;
                 }
@@ -426,11 +427,11 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     private void OnCheckTransmit(CCheckTransmitInfoList infoList)
     {
-        if (Globals.postProcessVolumes.Count == 0)
+        if (_state.postProcessVolumes.Count == 0)
             return;
 
         _staleSlots.Clear();
-        foreach (var (ownerSlot, pp) in Globals.postProcessVolumes)
+        foreach (var (ownerSlot, pp) in _state.postProcessVolumes)
         {
             if (pp == null || !pp.IsValid)
                 _staleSlots.Add(ownerSlot);
@@ -438,8 +439,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (_staleSlots.Count > 0)
         {
             foreach (int slot in _staleSlots)
-                Globals.postProcessVolumes.Remove(slot);
-            if (Globals.postProcessVolumes.Count == 0)
+                _state.postProcessVolumes.Remove(slot);
+            if (_state.postProcessVolumes.Count == 0)
                 return;
         }
 
@@ -449,7 +450,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             if (player == null || player.IsBot || !player.IsValid || player.IsHLTV)
                 continue;
 
-            if (!Globals.connectedSlots.Contains(player.Slot))
+            if (!_state.connectedSlots.Contains(player.Slot))
                 continue;
 
             _transmitObservers.Add((info, player.Slot));
@@ -458,7 +459,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (_transmitObservers.Count == 0)
             return;
 
-        foreach (var (ownerSlot, pp) in Globals.postProcessVolumes)
+        foreach (var (ownerSlot, pp) in _state.postProcessVolumes)
         {
             foreach (var (info, slot) in _transmitObservers)
             {
@@ -478,9 +479,9 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         playerVars.NightvisionEnabled = !playerVars.NightvisionEnabled;
 
         if (playerVars.NightvisionEnabled)
-            Utils.CreatePlayerPP(player);
+            Utils.CreatePlayerPP(_state, player);
         else
-            Utils.RemovePlayerPP(player);
+            Utils.RemovePlayerPP(_state, player);
 
         PersistPlayerSettings(player, playerVars);
         PrintPluginChat(player, playerVars.NightvisionEnabled ? $"{ChatColors.Lime}Enabled" : $"{ChatColors.LightRed}Disabled");
@@ -509,8 +510,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         playerVars.NightvisionIntensity = nvIntensity;
         PersistPlayerSettings(player, playerVars);
 
-        Utils.RemovePlayerPP(player);
-        Utils.CreatePlayerPP(player);
+        Utils.RemovePlayerPP(_state, player);
+        Utils.CreatePlayerPP(_state, player);
 
         PrintPluginChat(player, $"Intensity set to {ChatColors.Lime}{playerVars.NightvisionIntensity}");
     }
@@ -534,12 +535,12 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
             if (leftActive && !becameActive)
             {
-                Utils.RemovePlayerPP(player);
+                Utils.RemovePlayerPP(_state, player);
             }
             else if (becameActive && !leftActive)
             {
-                if (Globals.playerVars.TryGetValue(player.Slot, out var playerVars) && playerVars.NightvisionEnabled)
-                    Utils.CreatePlayerPP(player);
+                if (_state.playerVars.TryGetValue(player.Slot, out var playerVars) && playerVars.NightvisionEnabled)
+                    Utils.CreatePlayerPP(_state, player);
             }
         }
 

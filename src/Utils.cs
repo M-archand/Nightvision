@@ -5,27 +5,27 @@ namespace Nightvision;
 
 public class Utils
 {
-    public static void OnPlayerDisconnect(CCSPlayerController? player)
+    public static void OnPlayerDisconnect(PluginState state, CCSPlayerController? player)
     {
         if (player == null || player.IsBot)
             return;
 
-        RemovePlayerPP(player);
-        Globals.playerVars.Remove(player.Slot);
-        Globals.connectedSlots.Remove(player.Slot);
+        RemovePlayerPP(state, player);
+        state.playerVars.Remove(player.Slot);
+        state.connectedSlots.Remove(player.Slot);
     }
 
-    public static void CreatePlayerPP(CCSPlayerController? player)
+    public static void CreatePlayerPP(PluginState state, CCSPlayerController? player)
     {
         if (player == null || player.IsBot)
             return;
 
         int playerSlot = player.Slot;
 
-        if (!Globals.playerVars.TryGetValue(playerSlot, out var playerVars))
+        if (!state.playerVars.TryGetValue(playerSlot, out var playerVars))
             return;
 
-        RemovePlayerPP(player);
+        RemovePlayerPP(state, player);
 
         var pp = Utilities.CreateEntityByName<CPostProcessingVolume>("post_processing_volume");
         if (pp == null)
@@ -37,33 +37,33 @@ public class Utils
         pp.ExposureControl = true;
         pp.MaxExposure = playerVars.NightvisionIntensity;
         pp.MinExposure = playerVars.NightvisionIntensity;
-        
+
         pp.DispatchSpawn();
-        
-        Globals.postProcessVolumes[playerSlot] = pp;
+
+        state.postProcessVolumes[playerSlot] = pp;
     }
 
-    public static void RemovePlayerPP(CCSPlayerController? player)
+    public static void RemovePlayerPP(PluginState state, CCSPlayerController? player)
     {
         if (player == null)
             return;
 
         int playerSlot = player.Slot;
 
-        if (Globals.postProcessVolumes.TryGetValue(playerSlot, out var pp))
+        if (state.postProcessVolumes.TryGetValue(playerSlot, out var pp))
         {
             if (pp != null && pp.IsValid)
             {
                 pp.AcceptInput("Kill");
                 pp.Remove();
             }
-            Globals.postProcessVolumes.Remove(playerSlot);
+            state.postProcessVolumes.Remove(playerSlot);
         }
     }
 
-    public static void RemoveAllPlayerPP()
+    public static void RemoveAllPlayerPP(PluginState state)
     {
-        foreach (var pp in Globals.postProcessVolumes.Values)
+        foreach (var pp in state.postProcessVolumes.Values)
         {
             if (pp != null && pp.IsValid)
             {
@@ -72,6 +72,6 @@ public class Utils
             }
         }
 
-        Globals.postProcessVolumes.Clear();
+        state.postProcessVolumes.Clear();
     }
 }
