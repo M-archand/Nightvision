@@ -13,9 +13,9 @@ namespace Nightvision;
 public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 {
     public override string ModuleName => "Nightvision";
-    public override string ModuleVersion => $"1.1.0";
-    public override string ModuleAuthor => "rc https://github.com/rcnoob/";
-    public override string ModuleDescription => "A CS2 nightvision plugin";
+    public override string ModuleVersion => $"2.0.0";
+    public override string ModuleAuthor => "rcnoob, Marchand";
+
     public NightvisionConfig Config { get; set; } = new();
 
     private const float MinNightvisionIntensity = 1f;
@@ -47,7 +47,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         ["White"] = ChatColors.White,
         ["Yellow"] = ChatColors.Yellow
     };
-    
+
     private readonly PluginCapability<IClientprefsApi> g_PluginCapability = new("Clientprefs");
     private IClientprefsApi? ClientprefsApi;
     private int g_iCookieID = -1, g_iCookieID2 = -1;
@@ -55,7 +55,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     private readonly HashSet<int> loadedPlayerCookies = [];
     private bool PersistenceAvailable => ClientprefsApi is not null;
     private bool ClientprefsReady => ClientprefsApi is not null && g_iCookieID != -1 && g_iCookieID2 != -1;
-    
+
     private MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>? StateTransition;
     private readonly Dictionary<int, CSPlayerState> _oldPlayerState = [];
 
@@ -76,29 +76,27 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     public override void Load(bool hotReload)
     {
-        LogDebug("[Nightvision] Loading plugin...");
-
         TryHookStateTransition();
 
         RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull, HookMode.Post);
         RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect, HookMode.Post);
         RegisterListener<Listeners.CheckTransmit>(OnCheckTransmit);
+        RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
+        RegisterListener<Listeners.OnMapStart>(OnMapStart);
         AddCommand("nv", "Enable/disable nightvision", OnNightvisionCommand);
         AddCommand("nvi", "Change nightvision intensity", OnNightvisionIntensityCommand);
 
         if (hotReload)
             SyncConnectedPlayersFromRuntime();
-        
-        LogDebug("[Nightvision] Loaded!");
     }
 
     public override void Unload(bool hotReload)
     {
-        LogDebug("[Nightvision] Unloading plugin...");
-
         RemoveCommand("nv", OnNightvisionCommand);
         RemoveCommand("nvi", OnNightvisionIntensityCommand);
         RemoveListener<Listeners.CheckTransmit>(OnCheckTransmit);
+        RemoveListener<Listeners.OnMapEnd>(OnMapEnd);
+        RemoveListener<Listeners.OnMapStart>(OnMapStart);
         DeregisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull, HookMode.Post);
         DeregisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect, HookMode.Post);
 
@@ -115,11 +113,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         ClientprefsAvailabilityResolved = false;
         g_iCookieID = -1;
         g_iCookieID2 = -1;
-
-        LogDebug("[Nightvision] Unloaded{Suffix}.", hotReload ? " for hot reload" : string.Empty);
     }
 
-    // Print to logs if the signature is stale
     private void TryHookStateTransition()
     {
         try
@@ -172,7 +167,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         }
 
         LogDebug("[Nightvision] Clientprefs detected. Nightvision settings will persist between sessions.");
-        
+
         ClientprefsApi.OnDatabaseLoaded += OnClientprefDatabaseReady;
         ClientprefsApi.OnPlayerCookiesCached += OnPlayerCookiesCached;
 
@@ -188,37 +183,53 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         ClientprefsApi.OnDatabaseLoaded -= OnClientprefDatabaseReady;
         ClientprefsApi.OnPlayerCookiesCached -= OnPlayerCookiesCached;
     }
-    
-    public void OnClientprefDatabaseReady()
+
+    public async void OnClientprefDatabaseReady()
     {
         if (ClientprefsApi is null) return;
 
-        g_iCookieID = ClientprefsApi.RegPlayerCookie("nightvision_enabled", "Nightvision status");
-        g_iCookieID2 = ClientprefsApi.RegPlayerCookie("nightvision_intensity", "Nightvision intensity");
-        
-        if (g_iCookieID == -1)
+        int enabledCookieId;
+        int intensityCookieId;
+        try
         {
-            Logger.LogError("[Nightvision] Failed to register player cookie nightvision_enabled!");
-            return;
+            enabledCookieId = await ClientprefsApi.RegPlayerCookieAsync("nightvision_enabled", "Nightvision status");
+            intensityCookieId = await ClientprefsApi.RegPlayerCookieAsync("nightvision_intensity", "Nightvision intensity");
         }
-        
-        if (g_iCookieID2 == -1)
+        catch (Exception ex)
         {
-            Logger.LogError("[Nightvision] Failed to register player cookie nightvision_intensity!");
+            Logger.LogError(ex, "[Nightvision] Failed to register player cookies.");
             return;
         }
 
-        LogDebug("[Nightvision] Clientprefs ready. Player settings will now persist.");
-        SyncConnectedPlayersFromPersistence();
+        Server.NextWorldUpdate(() =>
+        {
+            g_iCookieID = enabledCookieId;
+            g_iCookieID2 = intensityCookieId;
+
+            if (g_iCookieID == -1)
+            {
+                Logger.LogError("[Nightvision] Failed to register player cookie nightvision_enabled!");
+                return;
+            }
+
+            if (g_iCookieID2 == -1)
+            {
+                Logger.LogError("[Nightvision] Failed to register player cookie nightvision_intensity!");
+                return;
+            }
+
+            LogDebug("[Nightvision] Clientprefs ready. Player settings will now persist.");
+            SyncConnectedPlayersFromPersistence();
+        });
     }
-    
+
     public void OnPlayerCookiesCached(CCSPlayerController player)
     {
         if (!ClientprefsReady) return;
         if (loadedPlayerCookies.Contains(player.Slot)) return;
 
         var playerVars = EnsurePlayerState(player);
-        
+
         string enabledCookie = ClientprefsApi!.GetPlayerCookie(player, g_iCookieID);
         string intensityCookie = ClientprefsApi.GetPlayerCookie(player, g_iCookieID2);
         loadedPlayerCookies.Add(player.Slot);
@@ -234,7 +245,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
         playerVars.NightvisionEnabled = string.Equals(enabledCookie, "true", StringComparison.OrdinalIgnoreCase);
 
-        if (playerVars.NightvisionEnabled)
+        if (playerVars.NightvisionEnabled && player.PawnIsAlive)
             Utils.CreatePlayerPP(player);
         else
             Utils.RemovePlayerPP(player);
@@ -296,23 +307,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (loadedPlayerCookies.Contains(player.Slot))
             return true;
 
-        if (TryLoadPlayerCookies(player))
-            return true;
-
         PrintPluginChat(player, "Persistent settings are still loading. Try again in a moment.");
         return false;
-    }
-
-    private bool TryLoadPlayerCookies(CCSPlayerController player)
-    {
-        if (!ClientprefsReady || loadedPlayerCookies.Contains(player.Slot))
-            return false;
-
-        if (!ClientprefsApi!.ArePlayerCookiesCached(player))
-            return false;
-
-        OnPlayerCookiesCached(player);
-        return loadedPlayerCookies.Contains(player.Slot);
     }
 
     private void SyncConnectedPlayersFromRuntime()
@@ -328,7 +324,9 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         foreach (CCSPlayerController player in Utilities.GetPlayers().Where(p => p.IsValid && !p.IsBot))
         {
             EnsurePlayerState(player);
-            TryLoadPlayerCookies(player);
+
+            if (!ClientprefsApi!.ArePlayerCookiesCached(player))
+                OnPlayerCookiesCached(player);
         }
     }
 
@@ -364,7 +362,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         {
             _oldPlayerState.Remove(player.Slot);
             Utils.OnPlayerConnect(player);
-            TryLoadPlayerCookies(player);
+            EnsurePlayerState(player);
         }
 
         return HookResult.Continue;
@@ -386,10 +384,47 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         return HookResult.Continue;
     }
 
+    private void OnMapEnd()
+    {
+        Utils.RemoveAllPlayerPP();
+        _oldPlayerState.Clear();
+    }
+
+    private void OnMapStart(string mapName)
+    {
+        Server.NextWorldUpdate(() =>
+        {
+            foreach (CCSPlayerController player in Utilities.GetPlayers().Where(p => p.IsValid && !p.IsBot))
+            {
+                if (!Globals.playerVars.TryGetValue(player.Slot, out var playerVars))
+                    continue;
+
+                if (playerVars.NightvisionEnabled && player.PawnIsAlive)
+                {
+                    Utils.CreatePlayerPP(player);
+                }
+            }
+        });
+    }
+
     private void OnCheckTransmit(CCheckTransmitInfoList infoList)
     {
         if (Globals.postProcessVolumes.Count == 0)
             return;
+
+        List<int>? staleSlots = null;
+        foreach (var (ownerSlot, pp) in Globals.postProcessVolumes)
+        {
+            if (pp == null || !pp.IsValid)
+                (staleSlots ??= []).Add(ownerSlot);
+        }
+        if (staleSlots is not null)
+        {
+            foreach (int slot in staleSlots)
+                Globals.postProcessVolumes.Remove(slot);
+            if (Globals.postProcessVolumes.Count == 0)
+                return;
+        }
 
         foreach ((CCheckTransmitInfo info, CCSPlayerController? player) in infoList)
         {
@@ -465,14 +500,14 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
         if (state != oldState)
         {
-            bool enteringSpectator = state == CSPlayerState.STATE_OBSERVER_MODE;
-            bool leavingSpectator = oldState == CSPlayerState.STATE_OBSERVER_MODE;
+            bool becameActive = state == CSPlayerState.STATE_ACTIVE;
+            bool leftActive = oldState == CSPlayerState.STATE_ACTIVE;
 
-            if (enteringSpectator)
+            if (leftActive && !becameActive)
             {
                 Utils.RemovePlayerPP(player);
             }
-            else if (leavingSpectator)
+            else if (becameActive && !leftActive)
             {
                 if (Globals.playerVars.TryGetValue(player.Slot, out var playerVars) && playerVars.NightvisionEnabled)
                     Utils.CreatePlayerPP(player);

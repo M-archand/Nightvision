@@ -62,8 +62,11 @@ public class Utils
 
         if (Globals.postProcessVolumes.TryGetValue(playerSlot, out var pp))
         {
-            pp.AcceptInput("Kill");
-            pp.Remove();
+            if (pp != null && pp.IsValid)
+            {
+                pp.AcceptInput("Kill");
+                pp.Remove();
+            }
             Globals.postProcessVolumes.Remove(playerSlot);
         }
     }
@@ -72,8 +75,11 @@ public class Utils
     {
         foreach (var pp in Globals.postProcessVolumes.Values)
         {
-            pp.AcceptInput("Kill");
-            pp.Remove();
+            if (pp != null && pp.IsValid)
+            {
+                pp.AcceptInput("Kill");
+                pp.Remove();
+            }
         }
 
         Globals.postProcessVolumes.Clear();
