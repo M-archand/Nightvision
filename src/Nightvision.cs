@@ -430,20 +430,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (_state.postProcessVolumes.Count == 0)
             return;
 
-        _staleSlots.Clear();
-        foreach (var (ownerSlot, pp) in _state.postProcessVolumes)
-        {
-            if (pp == null || !pp.IsValid)
-                _staleSlots.Add(ownerSlot);
-        }
-        if (_staleSlots.Count > 0)
-        {
-            foreach (int slot in _staleSlots)
-                _state.postProcessVolumes.Remove(slot);
-            if (_state.postProcessVolumes.Count == 0)
-                return;
-        }
-
         _transmitObservers.Clear();
         foreach ((CCheckTransmitInfo info, CCSPlayerController? player) in infoList)
         {
@@ -459,8 +445,15 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (_transmitObservers.Count == 0)
             return;
 
+        _staleSlots.Clear();
         foreach (var (ownerSlot, pp) in _state.postProcessVolumes)
         {
+            if (pp == null || !pp.IsValid)
+            {
+                _staleSlots.Add(ownerSlot);
+                continue;
+            }
+
             foreach (var (info, slot) in _transmitObservers)
             {
                 if (slot == ownerSlot)
@@ -469,6 +462,9 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
                 info.TransmitEntities.Remove(pp);
             }
         }
+
+        foreach (int slot in _staleSlots)
+            _state.postProcessVolumes.Remove(slot);
     }
 
     private void OnNightvisionCommand(CCSPlayerController? player, CommandInfo info)
