@@ -503,7 +503,10 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     private HookResult Hook_StateTransition(DynamicHook h)
     {
-        var player = h.GetParam<CCSPlayerPawn>(0).OriginalController.Value;
+        var pawn = h.GetParam<CCSPlayerPawn>(0);
+        if (pawn == null || !pawn.IsValid) return HookResult.Continue;
+
+        var player = pawn.OriginalController.Value;
         var state = h.GetParam<CSPlayerState>(1);
 
         if (player is null) return HookResult.Continue;
