@@ -237,6 +237,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     public void OnPlayerCookiesCached(CCSPlayerController player)
     {
+        if (player == null || !player.IsValid || player.IsBot) return;
         if (!ClientprefsReady) return;
         if (loadedPlayerCookies.Contains(player.Slot)) return;
 
