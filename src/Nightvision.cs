@@ -84,8 +84,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         RegisterListener<Listeners.CheckTransmit>(OnCheckTransmit);
         RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
-        AddCommand("nv", "Enable/disable nightvision", OnNightvisionCommand);
-        AddCommand("nvi", "Change nightvision intensity", OnNightvisionIntensityCommand);
+        AddCommand("css_nv", "Enable/disable nightvision", OnNightvisionCommand);
+        AddCommand("css_nvi", "Change nightvision intensity", OnNightvisionIntensityCommand);
 
         if (hotReload)
             SyncConnectedPlayersFromRuntime();
@@ -93,8 +93,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     public override void Unload(bool hotReload)
     {
-        RemoveCommand("nv", OnNightvisionCommand);
-        RemoveCommand("nvi", OnNightvisionIntensityCommand);
+        RemoveCommand("css_nv", OnNightvisionCommand);
+        RemoveCommand("css_nvi", OnNightvisionIntensityCommand);
         RemoveListener<Listeners.CheckTransmit>(OnCheckTransmit);
         RemoveListener<Listeners.OnMapEnd>(OnMapEnd);
         RemoveListener<Listeners.OnMapStart>(OnMapStart);
