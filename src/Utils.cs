@@ -46,10 +46,7 @@ public class Utils
         if (state.postProcessVolumes.TryGetValue(playerSlot, out var pp))
         {
             if (pp != null && pp.IsValid)
-            {
-                pp.AcceptInput("Kill");
                 pp.Remove();
-            }
             state.postProcessVolumes.Remove(playerSlot);
         }
     }
@@ -59,10 +56,7 @@ public class Utils
         foreach (var pp in state.postProcessVolumes.Values)
         {
             if (pp != null && pp.IsValid)
-            {
-                pp.AcceptInput("Kill");
                 pp.Remove();
-            }
         }
 
         state.postProcessVolumes.Clear();
