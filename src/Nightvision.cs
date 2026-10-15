@@ -86,9 +86,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
         AddCommand("css_nv", "Enable/disable nightvision", OnNightvisionCommand);
         AddCommand("css_nvi", "Change nightvision intensity", OnNightvisionIntensityCommand);
-
-        if (hotReload)
-            SyncConnectedPlayersFromRuntime();
     }
 
     public override void Unload(bool hotReload)
@@ -105,7 +102,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         UnsubscribeClientprefsEvents();
         Utils.RemoveAllPlayerPP(_state);
 
-        _state.connectedSlots.Clear();
         _state.playerVars.Clear();
         loadedPlayerCookies.Clear();
         _oldPlayerState.Clear();
@@ -280,7 +276,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             _state.playerVars[player.Slot] = playerVars;
         }
 
-        _state.connectedSlots.Add(player.Slot);
         return playerVars;
     }
 
@@ -330,12 +325,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
         PrintPluginChat(player, "Persistent settings are still loading. Try again in a moment.");
         return false;
-    }
-
-    private void SyncConnectedPlayersFromRuntime()
-    {
-        foreach (CCSPlayerController player in Utilities.GetPlayers().Where(p => p.IsValid && !p.IsBot))
-            EnsurePlayerState(player);
     }
 
     private void SyncConnectedPlayersFromPersistence()
@@ -392,7 +381,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     {
         Utils.RemovePlayerPP(_state, playerSlot);
         _state.playerVars.Remove(playerSlot);
-        _state.connectedSlots.Remove(playerSlot);
         loadedPlayerCookies.Remove(playerSlot);
         _oldPlayerState.Remove(playerSlot);
     }
@@ -432,13 +420,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         var transmitObservers = new List<(CCheckTransmitInfo info, int slot)>();
         foreach ((CCheckTransmitInfo info, CCSPlayerController? player) in infoList)
         {
-            if (player == null || player.IsBot || !player.IsValid || player.IsHLTV)
-                continue;
-
-            if (!_state.connectedSlots.Contains(player.Slot))
-                continue;
-
-            transmitObservers.Add((info, player.Slot));
+            int slot = player != null && player.IsValid ? player.Slot : -1;
+            transmitObservers.Add((info, slot));
         }
 
         if (transmitObservers.Count == 0)
