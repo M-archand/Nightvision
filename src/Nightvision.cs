@@ -80,7 +80,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         TryHookStateTransition();
 
         RegisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull, HookMode.Post);
-        RegisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect, HookMode.Post);
+        RegisterListener<Listeners.OnClientDisconnect>(OnClientDisconnect);
         RegisterListener<Listeners.CheckTransmit>(OnCheckTransmit);
         RegisterListener<Listeners.OnMapEnd>(OnMapEnd);
         RegisterListener<Listeners.OnMapStart>(OnMapStart);
@@ -99,7 +99,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         RemoveListener<Listeners.OnMapEnd>(OnMapEnd);
         RemoveListener<Listeners.OnMapStart>(OnMapStart);
         DeregisterEventHandler<EventPlayerConnectFull>(OnPlayerConnectFull, HookMode.Post);
-        DeregisterEventHandler<EventPlayerDisconnect>(OnPlayerDisconnect, HookMode.Post);
+        RemoveListener<Listeners.OnClientDisconnect>(OnClientDisconnect);
 
         TryUnhookStateTransition();
         UnsubscribeClientprefsEvents();
@@ -381,28 +381,22 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         var player = @event.Userid;
         if (player.IsValid && !player.IsBot)
         {
-            _oldPlayerState.Remove(player.Slot);
+            OnClientDisconnect(player.Slot);
             EnsurePlayerState(player);
         }
 
         return HookResult.Continue;
     }
 
-    private HookResult OnPlayerDisconnect(EventPlayerDisconnect @event, GameEventInfo info)
+    private void OnClientDisconnect(int playerSlot)
     {
-        if (@event.Userid?.IsValid != true)
-            return HookResult.Continue;
-
-        var player = @event.Userid;
-        if (player.IsValid && !player.IsBot)
-        {
-            Utils.OnPlayerDisconnect(_state, player);
-            loadedPlayerCookies.Remove(player.Slot);
-            _oldPlayerState.Remove(player.Slot);
-        }
-
-        return HookResult.Continue;
+        Utils.RemovePlayerPP(_state, playerSlot);
+        _state.playerVars.Remove(playerSlot);
+        _state.connectedSlots.Remove(playerSlot);
+        loadedPlayerCookies.Remove(playerSlot);
+        _oldPlayerState.Remove(playerSlot);
     }
+
 
     private void OnMapEnd()
     {

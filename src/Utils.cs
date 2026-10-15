@@ -5,16 +5,6 @@ namespace Nightvision;
 
 public class Utils
 {
-    public static void OnPlayerDisconnect(PluginState state, CCSPlayerController? player)
-    {
-        if (player == null || player.IsBot)
-            return;
-
-        RemovePlayerPP(state, player);
-        state.playerVars.Remove(player.Slot);
-        state.connectedSlots.Remove(player.Slot);
-    }
-
     public static void CreatePlayerPP(PluginState state, CCSPlayerController? player)
     {
         if (player == null || player.IsBot)
@@ -48,8 +38,11 @@ public class Utils
         if (player == null)
             return;
 
-        int playerSlot = player.Slot;
+        RemovePlayerPP(state, player.Slot);
+    }
 
+    public static void RemovePlayerPP(PluginState state, int playerSlot)
+    {
         if (state.postProcessVolumes.TryGetValue(playerSlot, out var pp))
         {
             if (pp != null && pp.IsValid)
