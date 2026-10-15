@@ -488,11 +488,10 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             return;
         }
 
-        bool validIntensity = TryNormalizeNightvisionIntensity(arg, out float nvIntensity);
-        if (!validIntensity)
+        if (!TryNormalizeNightvisionIntensity(arg, out float nvIntensity))
         {
-            nvIntensity = DefaultNightvisionIntensity;
-            PrintPluginChat(player, $"Inputs are limited to between {MinNightvisionIntensity.ToString(CultureInfo.InvariantCulture)} and {MaxNightvisionIntensity.ToString(CultureInfo.InvariantCulture)}. Using {DefaultNightvisionIntensity.ToString(CultureInfo.InvariantCulture)}.");
+            PrintPluginChat(player, $"Inputs are limited to between {MinNightvisionIntensity.ToString(CultureInfo.InvariantCulture)} and {MaxNightvisionIntensity.ToString(CultureInfo.InvariantCulture)}. Keeping {playerVars.NightvisionIntensity.ToString(CultureInfo.InvariantCulture)}.");
+            return;
         }
 
         playerVars.NightvisionIntensity = nvIntensity;
