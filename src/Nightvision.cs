@@ -461,7 +461,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
         playerVars.NightvisionEnabled = !playerVars.NightvisionEnabled;
 
-        if (playerVars.NightvisionEnabled)
+        if (playerVars.NightvisionEnabled && player.PawnIsAlive)
             Utils.CreatePlayerPP(_state, player);
         else
             Utils.RemovePlayerPP(_state, player);
@@ -479,7 +479,6 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
             return;
         }
         if (!TryGetReadyPlayerVars(player, out var playerVars)) return;
-        if (!playerVars.NightvisionEnabled) return;
 
         string arg = info.ArgByIndex(1);
         if (arg is null || arg == "")
@@ -497,10 +496,15 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         playerVars.NightvisionIntensity = nvIntensity;
         PersistPlayerSettings(player, playerVars);
 
-        Utils.RemovePlayerPP(_state, player);
-        Utils.CreatePlayerPP(_state, player);
+        if (playerVars.NightvisionEnabled && player.PawnIsAlive)
+            Utils.CreatePlayerPP(_state, player);
+        else
+            Utils.RemovePlayerPP(_state, player);
 
-        PrintPluginChat(player, $"Intensity set to {ChatColors.Lime}{playerVars.NightvisionIntensity}");
+        string intensityText = playerVars.NightvisionIntensity.ToString(CultureInfo.InvariantCulture);
+        PrintPluginChat(player, playerVars.NightvisionEnabled
+            ? $"Intensity set to {ChatColors.Lime}{intensityText}"
+            : $"Intensity set to {ChatColors.Lime}{intensityText}{ChatColors.Default}. Type !nv to enable.");
     }
 
     private HookResult Hook_StateTransition(DynamicHook h)
