@@ -22,6 +22,8 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     private const float MaxNightvisionIntensity = 10f;
     private const float DefaultNightvisionIntensity = 5.0f;
     private const string DefaultChatPrefix = "[NightVision]";
+    private const string EnabledCookieName = "nightvision_enabled";
+    private const string IntensityCookieName = "nightvision_intensity";
     private const string DefaultChatPrefixColor = "Lime";
     private static readonly IReadOnlyDictionary<string, char> ChatColorMap = new Dictionary<string, char>(StringComparer.OrdinalIgnoreCase)
     {
@@ -52,6 +54,9 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
     private IClientprefsApi? ClientprefsApi;
     private int g_iCookieID = -1, g_iCookieID2 = -1;
     private bool ClientprefsAvailabilityResolved;
+    private bool _clientprefDatabaseLoaded;
+    private bool _cookieRegistrationInFlight;
+    private bool _cookieRegistrationRerunRequested;
     private readonly HashSet<int> loadedPlayerCookies = [];
     private bool PersistenceAvailable => ClientprefsApi is not null;
     private bool ClientprefsReady => ClientprefsApi is not null && g_iCookieID != -1 && g_iCookieID2 != -1;
@@ -108,6 +113,9 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
         ClientprefsApi = null;
         ClientprefsAvailabilityResolved = false;
+        _clientprefDatabaseLoaded = false;
+        _cookieRegistrationInFlight = false;
+        _cookieRegistrationRerunRequested = false;
         g_iCookieID = -1;
         g_iCookieID2 = -1;
     }
@@ -168,8 +176,17 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         ClientprefsApi.OnDatabaseLoaded += OnClientprefDatabaseReady;
         ClientprefsApi.OnPlayerCookiesCached += OnPlayerCookiesCached;
 
-        if (hotReload)
-            OnClientprefDatabaseReady();
+        if (CookiesAlreadyKnown(ClientprefsApi))
+            _clientprefDatabaseLoaded = true;
+
+        if (hotReload || _clientprefDatabaseLoaded)
+            TryRegisterClientprefCookies();
+    }
+
+    private static bool CookiesAlreadyKnown(IClientprefsApi api)
+    {
+        return api.FindPlayerCookie(EnabledCookieName) != -1
+            && api.FindPlayerCookie(IntensityCookieName) != -1;
     }
 
     private void UnsubscribeClientprefsEvents()
@@ -181,68 +198,99 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         ClientprefsApi.OnPlayerCookiesCached -= OnPlayerCookiesCached;
     }
 
-    public async void OnClientprefDatabaseReady()
+    private void OnClientprefDatabaseReady()
     {
-        try
-        {
-            await RegisterClientprefCookiesAsync();
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "[Nightvision] Unhandled error while preparing player cookies.");
-        }
+        _clientprefDatabaseLoaded = true;
+        TryRegisterClientprefCookies();
     }
 
-    private async Task RegisterClientprefCookiesAsync()
+    // Single entry point for every trigger
+    private void TryRegisterClientprefCookies()
     {
-        if (ClientprefsApi is null) return;
+        var api = ClientprefsApi;
+        if (api is null || ClientprefsReady) return;
 
-        int enabledCookieId;
-        int intensityCookieId;
-        try
+        if (_cookieRegistrationInFlight)
         {
-            enabledCookieId = await ClientprefsApi.RegPlayerCookieAsync("nightvision_enabled", "Nightvision status", CookieAccess.CookieAccess_Private);
-            intensityCookieId = await ClientprefsApi.RegPlayerCookieAsync("nightvision_intensity", "Nightvision intensity", CookieAccess.CookieAccess_Private);
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "[Nightvision] Failed to register player cookies.");
+            _cookieRegistrationRerunRequested = true;
             return;
         }
 
-        Server.NextWorldUpdate(() =>
+        _cookieRegistrationInFlight = true;
+        _ = RegisterClientprefCookiesAsync(api);
+    }
+
+    private async Task RegisterClientprefCookiesAsync(IClientprefsApi api)
+    {
+        int enabledCookieId = -1;
+        int intensityCookieId = -1;
+        Exception? error = null;
+
+        try
         {
-            try
+            enabledCookieId = await api.RegPlayerCookieAsync(EnabledCookieName, "Nightvision status", CookieAccess.CookieAccess_Private);
+            intensityCookieId = await api.RegPlayerCookieAsync(IntensityCookieName, "Nightvision intensity", CookieAccess.CookieAccess_Private);
+        }
+        catch (Exception ex)
+        {
+            error = ex;
+        }
+
+        Server.NextWorldUpdate(() => CompleteCookieRegistration(enabledCookieId, intensityCookieId, error));
+    }
+
+    private void CompleteCookieRegistration(int enabledCookieId, int intensityCookieId, Exception? error)
+    {
+        _cookieRegistrationInFlight = false;
+        bool rerunRequested = _cookieRegistrationRerunRequested;
+        _cookieRegistrationRerunRequested = false;
+
+        if (ClientprefsApi is null) return;
+
+        try
+        {
+            if (error is not null)
+            {
+                Logger.LogError(error, "[Nightvision] Failed to register player cookies.");
+            }
+            else if (enabledCookieId == -1 || intensityCookieId == -1)
+            {
+                // Clientprefs returns -1 while its database is not loaded yet. OnDatabaseLoaded
+                // or the first OnPlayerCookiesCached triggers another attempt.
+                if (_clientprefDatabaseLoaded && !rerunRequested)
+                    Logger.LogError("[Nightvision] Failed to register player cookies ({EnabledCookie}={EnabledId}, {IntensityCookie}={IntensityId}).", EnabledCookieName, enabledCookieId, IntensityCookieName, intensityCookieId);
+                else
+                    LogDebug("[Nightvision] Clientprefs database not loaded yet. Waiting for OnDatabaseLoaded.");
+            }
+            else
             {
                 g_iCookieID = enabledCookieId;
                 g_iCookieID2 = intensityCookieId;
 
-                if (g_iCookieID == -1)
-                {
-                    Logger.LogError("[Nightvision] Failed to register player cookie nightvision_enabled!");
-                    return;
-                }
-
-                if (g_iCookieID2 == -1)
-                {
-                    Logger.LogError("[Nightvision] Failed to register player cookie nightvision_intensity!");
-                    return;
-                }
-
                 LogDebug("[Nightvision] Clientprefs ready. Player settings will now persist.");
                 SyncConnectedPlayersFromPersistence();
+                return;
             }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "[Nightvision] Failed to apply player cookies on world update.");
-            }
-        });
+
+            if (rerunRequested)
+                TryRegisterClientprefCookies();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "[Nightvision] Failed to apply player cookies on world update.");
+        }
     }
 
     public void OnPlayerCookiesCached(CCSPlayerController player)
     {
         if (player == null || !player.IsValid || player.IsBot) return;
-        if (!ClientprefsReady) return;
+        if (!ClientprefsReady)
+        {
+            // Cookies are only cached once the Clientprefs database is loaded
+            _clientprefDatabaseLoaded = true;
+            TryRegisterClientprefCookies();
+            return;
+        }
         if (loadedPlayerCookies.Contains(player.Slot)) return;
 
         var playerVars = EnsurePlayerState(player);
