@@ -2,6 +2,7 @@ using System.Globalization;
 using Clientprefs.API;
 using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
+using CounterStrikeSharp.API.Core.Attributes;
 using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Modules.Commands;
 using CounterStrikeSharp.API.Modules.Entities;
@@ -11,6 +12,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Nightvision;
 
+[MinimumApiVersion(369)]
 public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 {
     public override string ModuleName => "Nightvision";
@@ -568,7 +570,7 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         var player = pawn.OriginalController?.Value;
         var state = h.GetParam<CSPlayerState>(1);
 
-        if (player is null) return HookResult.Continue;
+        if (player is null || !player.IsValid) return HookResult.Continue;
 
         _oldPlayerState.TryGetValue(player.Slot, out var oldState);
 
