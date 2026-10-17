@@ -4,6 +4,7 @@ using CounterStrikeSharp.API;
 using CounterStrikeSharp.API.Core;
 using CounterStrikeSharp.API.Core.Capabilities;
 using CounterStrikeSharp.API.Modules.Commands;
+using CounterStrikeSharp.API.Modules.Entities;
 using CounterStrikeSharp.API.Modules.Memory.DynamicFunctions;
 using CounterStrikeSharp.API.Modules.Utils;
 using Microsoft.Extensions.Logging;
@@ -475,23 +476,27 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
         if (transmitObservers.Count == 0)
             return;
 
-        var staleSlots = new List<int>();
-        foreach (var (ownerSlot, pp) in _state.postProcessVolumes)
+        List<int>? staleSlots = null;
+        foreach (var (ownerSlot, handle) in _state.postProcessVolumes)
         {
-            if (pp == null || !pp.IsValid)
+            if (EntitySystem.GetEntityByHandle(handle) is null)
             {
-                staleSlots.Add(ownerSlot);
+                (staleSlots ??= []).Add(ownerSlot);
                 continue;
             }
 
+            int volumeIndex = (int)handle.Index;
             foreach (var (info, slot) in transmitObservers)
             {
                 if (slot == ownerSlot)
                     continue;
 
-                info.TransmitEntities.Remove(pp);
+                info.TransmitEntities.Remove(volumeIndex);
             }
         }
+
+        if (staleSlots is null)
+            return;
 
         foreach (int slot in staleSlots)
             _state.postProcessVolumes.Remove(slot);
