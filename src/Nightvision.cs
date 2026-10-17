@@ -125,21 +125,51 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
     private void TryHookStateTransition()
     {
+        const string degraded = "Nightvision will not auto-apply on spawn or clear on death until this is fixed.";
+
+        string signature;
         try
         {
-            string signature = GameData.GetSignature("StateTransition");
-            if (string.IsNullOrWhiteSpace(signature))
+            signature = GameData.GetSignature("StateTransition");
+        }
+        catch (ArgumentException)
+        {
+            Logger.LogError("[Nightvision] gamedata key 'StateTransition' not found. Copy gamedata/nvgamedata.json to addons/counterstrikesharp/gamedata/. {Degraded}", degraded);
+            return;
+        }
+        catch (InvalidOperationException ex)
+        {
+            Logger.LogError(ex, "[Nightvision] nvgamedata.json has no StateTransition signature for this platform. {Degraded}", degraded);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(signature))
+        {
+            Logger.LogError("[Nightvision] nvgamedata.json has an empty StateTransition signature for this platform. {Degraded}", degraded);
+            return;
+        }
+
+        try
+        {
+            var function = new MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>(signature);
+
+            if (function.Handle == IntPtr.Zero)
             {
-                Logger.LogError("[Nightvision] StateTransition signature is stale and needs to be updated.");
+                Logger.LogError("[Nightvision] StateTransition signature is stale and needs to be updated for the current CS2 build. {Degraded}", degraded);
                 return;
             }
 
-            StateTransition = new MemoryFunctionVoid<CCSPlayerPawn, CSPlayerState>(signature);
-            StateTransition.Hook(Hook_StateTransition, HookMode.Post);
+            function.Hook(Hook_StateTransition, HookMode.Post);
+            StateTransition = function;
+        }
+        catch (NativeException ex)
+        {
+            Logger.LogError(ex, "[Nightvision] StateTransition signature is stale or the hook was rejected by CounterStrikeSharp. {Degraded}", degraded);
+            StateTransition = null;
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "[Nightvision] StateTransition signature is stale and needs to be updated.");
+            Logger.LogError(ex, "[Nightvision] Failed to hook StateTransition. {Degraded}", degraded);
             StateTransition = null;
         }
     }
