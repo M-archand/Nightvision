@@ -602,12 +602,12 @@ public class Nightvision : BasePlugin, IPluginConfig<NightvisionConfig>
 
         if (player is null || !player.IsValid) return HookResult.Continue;
 
-        _oldPlayerState.TryGetValue(player.Slot, out var oldState);
+        bool hasOldState = _oldPlayerState.TryGetValue(player.Slot, out var oldState);
 
-        if (state != oldState)
+        if (!hasOldState || state != oldState)
         {
             bool becameActive = state == CSPlayerState.STATE_ACTIVE;
-            bool leftActive = oldState == CSPlayerState.STATE_ACTIVE;
+            bool leftActive = hasOldState && oldState == CSPlayerState.STATE_ACTIVE;
 
             if (leftActive && !becameActive)
             {
